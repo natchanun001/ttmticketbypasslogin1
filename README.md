@@ -63,10 +63,18 @@ This project contains a Playwright-based structure to automate the login process
    npx tsx manual-login.ts
    ```
 4. **Login ด้วยมือ** ใน Chrome ที่เปิดขึ้นมาใหม่นั้นให้เรียบร้อย แล้วกลับมากด **Enter** ใน Terminal ที่รัน `manual-login.ts`
-5. **หลังจาก session บันทึกเรียบร้อยแล้ว** ให้รันคำสั่งซื้อบัตร:
+5. **หลังจาก session บันทึกเรียบร้อยแล้ว** ให้รันคำสั่งซื้อบัตร (รองรับระบบกดโซนและที่นั่งอัตโนมัติ):
    ```bash
    npx tsx buy-ticket.ts
    ```
+
+### การตั้งค่าเพิ่มเติม (.env)
+
+คุณสามารถตั้งค่าการซื้อบัตรอัตโนมัติได้ในไฟล์ `.env`:
+- `TTM_QUANTITY`: จำนวนบัตรที่ต้องการ (เช่น 1, 2)
+- `TTM_ZONE_PRIORITY`: ลำดับโซนที่ต้องการ (เช่น A1,B1,A2) ถ้าโซนแรกเต็มจะข้ามไปโซนถัดไป
+- `TTM_DELIVERY_METHOD`: วิธีรับบัตร (`pickup` รับหน้างาน, `postal` ส่งไปรษณีย์)
+- `TTM_PAYMENT_METHOD`: วิธีชำระเงิน (`qr` สำหรับ PromptPay, `credit` สำหรับบัตรเครดิต)
 
 # ttmTicketBypassLogin1
 # ttmTicketBypassLogin1

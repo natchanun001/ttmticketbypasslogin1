@@ -16,13 +16,20 @@ chromium.use(StealthPlugin());
 import * as path from 'path';
 import * as fs from 'fs';
 import * as dotenv from 'dotenv';
+import { SeatPage } from './pages/SeatPage';
+import { CheckoutPage } from './pages/CheckoutPage';
+import { selectZone, selectSeats } from './pages/SeatHelper';
 
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 const STATE_FILE = path.resolve(__dirname, 'auth-state.json');
 
-// ===== ตั้งค่า Event ที่ต้องการซื้อบัตร =====
+// ===== ตั้งค่า Event และ การซื้อบัตร =====
 const EVENT_URL = process.env.TTM_EVENT_URL || 'https://event.thaiticketmajor.com';
+const QUANTITY = parseInt(process.env.TTM_QUANTITY || '1', 10);
+const ZONE_PRIORITY = (process.env.TTM_ZONE_PRIORITY || '').split(',').map(z => z.trim()).filter(z => z);
+const DELIVERY_METHOD = (process.env.TTM_DELIVERY_METHOD || 'pickup') as 'pickup' | 'postal';
+const PAYMENT_METHOD = (process.env.TTM_PAYMENT_METHOD || 'qr') as 'qr' | 'credit';
 // ============================================
 
 async function main() {
@@ -31,16 +38,17 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('\n🎫  TTM Buy Ticket\n');
+  console.log('\n🎫  TTM Buy Ticket (Automated Flow)\n');
   console.log(`   Event URL : ${EVENT_URL}`);
+  console.log(`   Quantity  : ${QUANTITY}`);
+  console.log(`   Zones     : ${ZONE_PRIORITY.join(', ') || 'First Available'}`);
   console.log(`   Session   : ${STATE_FILE}\n`);
 
   const browser = await chromium.launch({
-    headless: false, // เปิด headed เพื่อดูความคืบหน้า (เปลี่ยนเป็น true ถ้าต้องการ background)
+    headless: false,
     args: ['--start-maximized'],
   });
 
-  // โหลด session ที่บันทึกไว้ — ข้าม login โดยสมบูรณ์
   const context = await browser.newContext({
     storageState: STATE_FILE,
     userAgent:
@@ -54,53 +62,94 @@ async function main() {
   console.log('🌐  กำลังไปที่ event page...');
   await page.goto(EVENT_URL, { waitUntil: 'domcontentloaded' });
 
-  // ตรวจว่า session ยังใช้ได้ (ถ้า redirect กลับไปหน้า login แสดงว่าหมดอายุ)
   if (page.url().includes('signin')) {
     console.error('❌  Session หมดอายุ — กรุณารัน manual-login.ts ใหม่อีกครั้ง');
     await browser.close();
     process.exit(1);
   }
 
-  console.log('✅  Session ยังใช้ได้ — เข้าสู่ event page สำเร็จ');
-  console.log('🔍  กำลังหาปุ่มซื้อบัตร...\n');
+  console.log('✅  Session ยังใช้ได้');
 
-  // รอและกดปุ่มซื้อบัตร
+  // --- Step 1: Click Buy Now ---
+  console.log('🔍  กำลังหาปุ่มซื้อบัตร...');
   const buySelectors = [
-    'a:has-text("ซื้อบัตร")',
-    'a:has-text("Buy")',
-    'a:has-text("BUY")',
-    'button:has-text("ซื้อบัตร")',
-    'button:has-text("Buy")',
-    'input[value="ซื้อบัตร"]',
-    'input[value="Buy"]',
-    '.btn-buy',
-    '[class*="buy"]',
+    'a:has-text("ซื้อบัตร")', 'a:has-text("Buy")', 'a:has-text("BUY")',
+    'button:has-text("ซื้อบัตร")', 'button:has-text("Buy")',
+    '.btn-buy', '[class*="buy"]'
   ];
 
   let clicked = false;
   for (const selector of buySelectors) {
     try {
       const btn = page.locator(selector).first();
-      await btn.waitFor({ state: 'visible', timeout: 3000 });
+      await btn.waitFor({ state: 'visible', timeout: 5000 });
       await btn.click();
-      console.log(`✅  กดปุ่มซื้อบัตรแล้ว (selector: ${selector})`);
+      console.log(`✅  กดปุ่มซื้อบัตรแล้ว`);
       clicked = true;
       break;
-    } catch {
-      // ลอง selector ถัดไป
-    }
+    } catch {}
   }
 
   if (!clicked) {
-    console.log('⚠️  ไม่พบปุ่มซื้อบัตรอัตโนมัติ — browser ยังเปิดอยู่ กรุณากดเองได้เลย');
-    console.log('   (กด Ctrl+C เพื่อปิดเมื่อเสร็จ)\n');
-    // รอให้ผู้ใช้ทำเองใน browser ที่เปิดอยู่
-    await page.waitForTimeout(300_000); // รอสูงสุด 5 นาที
+    console.log('⚠️  ไม่พบปุ่มซื้อบัตรอัตโนมัติ — กรุณาดำเนินการต่อเองใน browser');
   } else {
-    console.log('\n🎉  ดำเนินการซื้อบัตรแล้ว — browser ยังเปิดอยู่ ดำเนินการต่อได้เลย');
-    await page.waitForTimeout(300_000);
+    try {
+      // --- Step 2: Select Zone ---
+      const seatPage = new SeatPage(page);
+      console.log('⏳  กำลังโหลดหน้าเลือกโซน...');
+      await seatPage.waitForSeatMap();
+      
+      const selectedZone = await selectZone(seatPage, ZONE_PRIORITY);
+      if (selectedZone) {
+        console.log(`✅  เลือกโซน: ${selectedZone}`);
+      } else {
+        console.log('⚠️  ไม่สามารถเลือกโซนได้ (อาจจะเต็มหมดแล้ว)');
+      }
+
+      // --- Step 3: Select Seats ---
+      console.log(`⏳  กำลังหาที่นั่ง (${QUANTITY} ที่)...`);
+      await seatPage.setQuantity(QUANTITY);
+      
+      const seatsByRow = await seatPage.getAllSeatsByRow();
+      const result = selectSeats({ seatsByRow, quantity: QUANTITY });
+
+      if (result.success) {
+        for (const seat of result.selected) {
+          await seatPage.clickSeat(seat);
+          console.log(`💺  เลือกที่นั่ง: แถว ${seat.row} ลำดับที่ ${seat.index + 1}`);
+        }
+        await seatPage.clickProceed();
+        console.log('✅  ยืนยันการเลือกที่นั่งแล้ว');
+
+        // --- Step 4: Checkout ---
+        console.log('⏳  กำลังไปหน้าชำระเงิน...');
+        const checkoutPage = new CheckoutPage(page);
+        await checkoutPage.selectDeliveryMethod(DELIVERY_METHOD);
+        await checkoutPage.selectPaymentMethod(PAYMENT_METHOD);
+        await checkoutPage.acceptTermsIfRequired();
+        
+        console.log('🚀  กำลังยืนยันคำสั่งซื้อ...');
+        await checkoutPage.confirmOrder();
+        
+        if (PAYMENT_METHOD === 'qr') {
+          console.log('⏳  กำลังรอ QR PromptPay...');
+          await checkoutPage.waitForQR();
+          console.log('🎉  QR Code แสดงแล้ว! กรุณาสแกนเพื่อชำระเงิน');
+        } else {
+          console.log('🎉  ไปที่หน้าชำระเงินแล้ว!');
+        }
+      } else {
+        console.log('⚠️  ไม่พบที่นั่งว่างที่ตรงตามเงื่อนไข');
+      }
+
+    } catch (err) {
+      console.error('❌  เกิดข้อผิดพลาดในขั้นตอนอัตโนมัติ:', err);
+    }
   }
 
+  console.log('\n💡  Browser จะยังเปิดอยู่เพื่อให้คุณดำเนินการต่อได้');
+  console.log('   (กด Ctrl+C ใน terminal เพื่อปิด)\n');
+  await page.waitForTimeout(600_000); // รอ 10 นาที
   await browser.close();
 }
 
