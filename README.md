@@ -47,5 +47,26 @@ This project contains a Playwright-based structure to automate the login process
 - **Access Denied (403):** ThaiTicketMajor has strong bot protection. If you encounter an "Access Denied" page, try running in **headed mode** (`npm run test:headed`) and manually solve any CAPTCHAs or challenges.
 - **Selectors:** If the login page structure changes, update the selectors in `pages/LoginPage.ts`. Currently, it uses common name attributes like `email` and `password`.
 - **URL:** The target URL is set to `https://event.thaiticketmajor.com/user/signin.php?redir=/index.html`. If you need to login via the main member page, update the `baseURL` in `playwright.config.ts` or the `goto()` method in `LoginPage.ts`.
+## วิธีการใช้งาน (Manual Login Flow)
+
+ทำตามลำดับนี้เพื่อบันทึก Session และซื้อบัตร:
+
+1. **ปิด Chrome ทุกหน้าต่างก่อน** (สำคัญมาก)
+2. **เปิด Chrome ใหม่แบบ remote debug:**
+   เปิด Terminal แล้วรันคำสั่ง:
+   ```bash
+   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+   ```
+3. **เปิด Terminal ใหม่อีกอัน** แล้วรัน:
+   ```bash
+   cd ~/Downloads/ttm.new
+   npx tsx manual-login.ts
+   ```
+4. **Login ด้วยมือ** ใน Chrome ที่เปิดขึ้นมาใหม่นั้นให้เรียบร้อย แล้วกลับมากด **Enter** ใน Terminal ที่รัน `manual-login.ts`
+5. **หลังจาก session บันทึกเรียบร้อยแล้ว** ให้รันคำสั่งซื้อบัตร:
+   ```bash
+   npx tsx buy-ticket.ts
+   ```
+
 # ttmTicketBypassLogin1
 # ttmTicketBypassLogin1
