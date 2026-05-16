@@ -48,3 +48,4 @@ This project contains a Playwright-based structure to automate the login process
 - **Selectors:** If the login page structure changes, update the selectors in `pages/LoginPage.ts`. Currently, it uses common name attributes like `email` and `password`.
 - **URL:** The target URL is set to `https://event.thaiticketmajor.com/user/signin.php?redir=/index.html`. If you need to login via the main member page, update the `baseURL` in `playwright.config.ts` or the `goto()` method in `LoginPage.ts`.
 # ttmTicketBypassLogin1
+# ttmTicketBypassLogin1
