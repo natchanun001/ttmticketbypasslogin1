@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as dotenv from 'dotenv';
 import { SeatPage } from './pages/SeatPage';
 import { CheckoutPage } from './pages/CheckoutPage';
-import { selectZone, selectSeats } from './pages/SeatHelper';
+import { selectSeats } from './pages/SeatHelper';
 
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
@@ -18,7 +18,7 @@ const QUANTITY = parseInt(process.env.TTM_QUANTITY || '1', 10);
 const ZONE_PRIORITY = (process.env.TTM_ZONE_PRIORITY || '').split(',').map(z => z.trim()).filter(z => z);
 const DELIVERY_METHOD = (process.env.TTM_DELIVERY_METHOD || 'pickup') as 'pickup' | 'postal';
 const PAYMENT_METHOD = (process.env.TTM_PAYMENT_METHOD || 'qr') as 'qr' | 'credit';
-const TARGET_ROUND_INDEX = parseInt(process.env.TARGET_ROUND_INDEX || '0', 10); // กำหนดรอบที่ต้องการซื้อ (0 = รอบแรก, 1 = รอบสอง, ...)
+const TARGET_ROUND_INDEX = parseInt(process.env.TARGET_ROUND_INDEX || '0', 10);
 // ============================================
 
 async function runBuyTicket(sessionFile: string, userIndex: number) {
@@ -56,11 +56,7 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
 
     // --- Step 1: Click Buy Now ---
     console.log(`${logPrefix} 🔍  กำลังหาปุ่มซื้อบัตร...`);
-    const buySelectors = [
-      `span:has-text("ซื้อบัตร")`,
-    ];
-
-    console.log(`${logPrefix} 🛒  พยายามกดปุ่มซื้อบัตร...`);
+    const buySelectors = [`span:has-text("ซื้อบัตร")`];
 
     let clicked = false;
     for (const selector of buySelectors) {
@@ -71,107 +67,101 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
         console.log(`${logPrefix} ✅  กดปุ่มซื้อบัตรสำหรับรอบที่ ${TARGET_ROUND_INDEX + 1} แล้ว`);
         clicked = true;
 
-        const nextStateLocator = page.locator('.map-zone')
-          .or(page.locator('#myform'))
-          .or(page.locator('#rdagree'));
+        const nextStateLocator = page.locator('.map-zone').or(page.locator('form#myform')).or(page.locator('#rdagree'));
+        await nextStateLocator.waitFor({ state: 'visible', timeout: 10000 }).catch(() => { });
 
-        await nextStateLocator.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
-          console.log(`${logPrefix} ⚠️  ยังไม่พบหน้าถัดไปที่คาดหวัง`);
-        });
-
-        const isMapZoneVisible = await page.locator('.map-zone').isVisible();
-        const isNeedMoreInfo = await page.locator('#myform').isVisible();
+        const isNeedMoreInfo = await page.locator('form#myform').isVisible();
         const isNeedAcceptTerms = await page.locator('#rdagree').isVisible();
 
-        if (isMapZoneVisible) {
-          console.log(`${logPrefix} ✅  หน้าเลือกโซนโหลดแล้ว`);
-          break;
-        } else if (isNeedMoreInfo) {
+        if (isNeedMoreInfo) {
           console.log(`${logPrefix} 📝  กำลังกรอกข้อมูลเพิ่มเติม (ID Card/Passport)...`);
-          const inputTypes = "thaiid"; // หรือ "passport" ขึ้นอยู่กับลูกค้าต้องการ
-          await page.click(`button[data-method="${inputTypes}"]`);
-
-          if (inputTypes === "thaiid") {
-            await page.fill('input#txt_verifycode', '1234567890123'); // ใส่ค่าตัวอย่าง id
-          } else {
-            // await page.fill('input#passport_country', 'TH'); // ใส่ค่าตัวอย่าง TODO: handle dropdown เพราะในการส่งค่าต้องใช้เป็น data-code ไม้่ใช่ data-name
-            await page.fill('input#txt_verifycode', 'A12345678'); // ใส่ค่าตัวอย่าง passport
-          }
+          await page.click(`button[data-method="passport"]`);
+          await page.click('div#verify-country-wrap');
+          await page.keyboard.type("Afghanistan");
+          await page.click(`div[data-name="Afghanistan"]`);
+          await page.fill('input#txt_verifycode', 'AC999888');
           await page.click('button#btnconfirm');
-          break;
         } else if (isNeedAcceptTerms) {
           console.log(`${logPrefix} ⚖️  กำลังยอมรับเงื่อนไข...`);
-          await page.check('#rdagree');
-          await page.click('input#rdagree');
+          await page.click('label.label-checkbox');
           await page.click('button#btn_verify');
-          break;
-        } else {
-          console.log(`${logPrefix} ⚠️  ไม่พบหน้าถัดไปที่คาดหวังหลังจากกดซื้อบัตร`);
         }
-
+        break;
       } catch {
-        console.error(`${logPrefix} ❌  ไม่สามารถกดปุ่มซื้อบัตรด้วย selector: ${selector} ได้`);
+        console.error(`${logPrefix} ❌  ไม่สามารถกดปุ่มซื้อบัตรได้`);
       }
     }
 
     if (!clicked) {
-      console.log(`${logPrefix} ⚠️  ไม่พบปุ่มซื้อบัตรอัตโนมัติ — กรุณาดำเนินการต่อเองใน browser`);
-    } else {
+      console.log(`${logPrefix} ⚠️  ไม่พบปุ่มซื้อบัตรอัตโนมัติ`);
+      return;
+    }
+
+    // --- Step 2 & 3: Loop Priority Zones and Select Seats ---
+    const seatPage = new SeatPage(page);
+    let seatFound = false;
+
+    console.log(`${logPrefix} ⏳  เริ่มค้นหาที่นั่งตามลำดับ Priority...`);
+
+    for (const zoneToTry of ZONE_PRIORITY) {
       try {
-        // --- Step 2: Select Zone ---
-        const seatPage = new SeatPage(page);
-        console.log(`${logPrefix} ⏳  กำลังโหลดหน้าเลือกโซน...`);
+        console.log(`${logPrefix} 🔍  กำลังลองเข้าโซน: ${zoneToTry}`);
         await seatPage.waitForSeatMap();
 
-        const selectedZone = await selectZone(seatPage, ZONE_PRIORITY);
-        if (selectedZone) {
-          console.log(`${logPrefix} ✅  เลือกโซน: ${selectedZone}`);
-        } else {
-          console.log(`${logPrefix} ⚠️  ไม่สามารถเลือกโซนได้ (อาจจะเต็มหมดแล้ว)`);
+        const entered = await seatPage.selectZoneByLabel(zoneToTry);
+        if (!entered) {
+          console.log(`${logPrefix} ⏭️  โซน ${zoneToTry} ไม่ว่างหรือคลิกไม่ได้ ข้ามไปโซนถัดไป...`);
+          continue;
         }
 
-        // --- Step 3: Select Seats ---
-        console.log(`${logPrefix} ⏳  กำลังหาที่นั่ง (${QUANTITY} ที่)...`);
-        await seatPage.setQuantity(QUANTITY);
+        // รอโหลดผังที่นั่งในโซน
+        console.log(`${logPrefix} ⏳  กำลังโหลดผังที่นั่งในโซน ${zoneToTry}...`);
+        await page.waitForSelector('#tableseats', { timeout: 10000 }).catch(() => { });
 
+        await seatPage.setQuantity(QUANTITY);
         const seatsByRow = await seatPage.getAllSeatsByRow();
         const result = selectSeats({ seatsByRow, quantity: QUANTITY });
 
         if (result.success) {
+          console.log(`${logPrefix} 🎉  พบที่นั่งในโซน ${zoneToTry}! กำลังเลือก...`);
           for (const seat of result.selected) {
             await seatPage.clickSeat(seat);
-            console.log(`${logPrefix} 💺  เลือกที่นั่ง: แถว ${seat.row} ลำดับที่ ${seat.index + 1}`);
+            console.log(`${logPrefix} 💺  เลือก: แถว ${seat.row} เลขที่ ${seat.index}`);
           }
           await seatPage.clickProceed();
-          console.log(`${logPrefix} ✅  ยืนยันการเลือกที่นั่งแล้ว`);
-
-          // --- Step 4: Checkout ---
-          console.log(`${logPrefix} ⏳  กำลังไปหน้าชำระเงิน...`);
-          const checkoutPage = new CheckoutPage(page);
-          await checkoutPage.selectDeliveryMethod(DELIVERY_METHOD);
-          await checkoutPage.selectPaymentMethod(PAYMENT_METHOD);
-          await checkoutPage.acceptTermsIfRequired();
-
-          console.log(`${logPrefix} 🚀  กำลังยืนยันคำสั่งซื้อ...`);
-          await checkoutPage.confirmOrder();
-
-          if (PAYMENT_METHOD === 'qr') {
-            console.log(`${logPrefix} ⏳  กำลังรอ QR PromptPay...`);
-            await checkoutPage.waitForQR();
-            console.log(`${logPrefix} 🎉  QR Code แสดงแล้ว! กรุณาสแกนเพื่อชำระเงิน`);
-          } else {
-            console.log(`${logPrefix} 🎉  ไปที่หน้าชำระเงินแล้ว!`);
-          }
+          seatFound = true;
+          break;
         } else {
-          console.log(`${logPrefix} ⚠️  ไม่พบที่นั่งว่างที่ตรงตามเงื่อนไข`);
+          console.log(`${logPrefix} 🔄  โซน ${zoneToTry} ไม่มีที่นั่งว่างที่ตรงเงื่อนไข กำลังถอยออก...`);
+          await page.goBack();
+          await page.waitForTimeout(1000);
         }
-
       } catch (err) {
-        console.error(`${logPrefix} ❌  เกิดข้อผิดพลาดในขั้นตอนอัตโนมัติ:`, err);
+        console.error(`${logPrefix} ❌  พบปัญหาในโซน ${zoneToTry}:`, err);
+        await page.goBack().catch(() => { });
       }
     }
 
-    console.log(`${logPrefix} 💡  เสร็จสิ้นขั้นตอนสำหรับ User ${userIndex} (Browser จะเปิดค้างไว้ 10 นาที)`);
+    if (seatFound) {
+      // --- Step 4: Checkout ---
+      console.log(`${logPrefix} ⏳  กำลังไปหน้าชำระเงิน...`);
+      const checkoutPage = new CheckoutPage(page);
+      // เลือกวิธีรับบัตร btn_pickup | btn_thaipost | btn_eticket
+      await checkoutPage.selectDeliveryMethod(DELIVERY_METHOD);
+      await checkoutPage.selectPaymentMethod(PAYMENT_METHOD);
+      await checkoutPage.acceptTermsIfRequired();
+
+      console.log(`${logPrefix} 🚀  กำลังยืนยันคำสั่งซื้อ...`);
+      await checkoutPage.confirmOrder();
+
+      if (PAYMENT_METHOD === 'qr') {
+        await checkoutPage.waitForQR();
+      }
+    } else {
+      console.error(`${logPrefix} ❌  ไล่ครบทุกโซนใน Priority แล้วแต่ไม่พบที่นั่งว่างเลย หยุดทำงาน`);
+    }
+
+    console.log(`${logPrefix} 💡  เสร็จสิ้นขั้นตอน (Browser จะเปิดค้างไว้ 10 นาที)`);
     await page.waitForTimeout(600_000);
 
   } catch (err) {
@@ -183,26 +173,22 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
 
 async function main() {
   if (!fs.existsSync(SESSIONS_DIR)) {
-    console.error('❌  ไม่พบโฟลเดอร์ sessions — กรุณารัน manual-login.ts ก่อน');
+    console.error('❌  ไม่พบโฟลเดอร์ sessions');
     process.exit(1);
   }
 
   const sessionFiles = fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.json'));
-
   if (sessionFiles.length === 0) {
-    console.error('❌  ไม่พบ session files ในโฟลเดอร์ sessions — กรุณารัน manual-login.ts ก่อน');
+    console.error('❌  ไม่พบ session files');
     process.exit(1);
   }
 
-  console.log('\n🎫  TTM Buy Ticket (Multi-User Parallel Mode)\n');
+  console.log(`\n🎫  TTM Buy Ticket (Priority Loop Mode)\n`);
   console.log(`   Event URL : ${EVENT_URL}`);
   console.log(`   Quantity  : ${QUANTITY}`);
-  console.log(`   Users     : ${sessionFiles.length}\n`);
+  console.log(`   Priority  : ${ZONE_PRIORITY.join(' > ')}\n`);
 
-  // รันทุก session พร้อมกัน
   await Promise.all(sessionFiles.map((file, index) => runBuyTicket(file, index + 1)));
-
-  console.log('\n✨  ทุกกระบวนการทำงานเสร็จสิ้น\n');
 }
 
 main().catch((err) => {

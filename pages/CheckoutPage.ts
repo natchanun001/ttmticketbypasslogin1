@@ -1,25 +1,26 @@
 import type { Page } from '@playwright/test';
 
 export const CHECKOUT_LOCATORS = {
-  deliveryPickup:     'input[value="pickup"], input[value="self_pickup"], label:has-text("รับที่งาน") input',
-  deliveryPostal:     'input[value="postal"], input[value="delivery"], label:has-text("จัดส่ง") input',
-  paymentQR:          'input[value="qr"], input[value="qr_promptpay"], label:has-text("QR") input',
-  paymentCreditCard:  'input[value="credit"], input[value="credit_card"], label:has-text("Credit") input',
-  confirmBtn:         'button[type="submit"].btn-confirm, .btn-confirm-order, button:has-text("ยืนยัน"), button:has-text("Confirm")',
-  termsCheckbox:      'input[name="terms"], input[type="checkbox"].terms-agree',
-  qrImage:            '.qr-code img, .payment-qr img, #qr-promptpay img',
-  qrContainer:        '.qr-code, .payment-qr, #qr-payment-container',
-  paymentExpiry:      '.payment-expiry, .qr-expiry, .time-remaining',
+  deliveryPickup: 'a#btn_pickup',
+  deliveryPostal: 'a#btn_thaipost',
+  deliveryEticket: 'a#btn_eticket',
+  paymentQR: 'a#btn_kbankqr',
+  paymentCreditCard: 'a#btn_creditcard',
+  confirmBtn: 'button#btn_confirm',
+  termsCheckbox: 'label#checkagree',
+  qrImage: 'div.qr-code-contriner img.img-full-width',
+  qrContainer: 'div.qr-code-contriner',
+  paymentExpiry: 'div.qr-code-expire-time',
 } as const;
 
 export class CheckoutPage {
-  constructor(private page: Page) {}
+  constructor(private page: Page) { }
 
-  async selectDeliveryMethod(method: 'pickup' | 'postal'): Promise<void> {
-    const selector = method === 'pickup' ? CHECKOUT_LOCATORS.deliveryPickup : CHECKOUT_LOCATORS.deliveryPostal;
+  async selectDeliveryMethod(method: 'pickup' | 'postal' | 'eticket'): Promise<void> {
+    const selector = method === 'pickup' ? CHECKOUT_LOCATORS.deliveryPickup : method === 'postal' ? CHECKOUT_LOCATORS.deliveryPostal : CHECKOUT_LOCATORS.deliveryEticket;
     const el = this.page.locator(selector).first();
     if (await el.isVisible()) {
-        await el.click();
+      await el.click();
     }
   }
 
@@ -27,7 +28,7 @@ export class CheckoutPage {
     const selector = method === 'qr' ? CHECKOUT_LOCATORS.paymentQR : CHECKOUT_LOCATORS.paymentCreditCard;
     const el = this.page.locator(selector).first();
     if (await el.isVisible()) {
-        await el.click();
+      await el.click();
     }
   }
 
@@ -47,8 +48,10 @@ export class CheckoutPage {
     await this.page.waitForSelector(CHECKOUT_LOCATORS.qrContainer, {
       state: 'visible',
       timeout: timeoutMs,
+    }).then(() => {
+      console.log('✅  พบ QR Payment อัตโนมัติ');
     }).catch(() => {
-        console.log('⚠️  ไม่พบ QR Payment อัตโนมัติ');
+      console.log('⚠️  ไม่พบ QR Payment อัตโนมัติ');
     });
   }
 }

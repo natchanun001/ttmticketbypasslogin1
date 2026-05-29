@@ -41,16 +41,16 @@ export function selectSeats(input: {
     if (seats.length < quantity) continue;
 
     const sorted = [...seats].sort((a, b) => a.index - b.index);
-    
+
     // Find consecutive seats
     for (let i = 0; i <= sorted.length - quantity; i++) {
-        const group = sorted.slice(i, i + quantity);
-        const isAdjacent = group.every(
-            (s, j) => j === 0 || s.index === group[j - 1].index + 1,
-        );
-        if (isAdjacent) {
-            return { selected: group, success: true };
-        }
+      const group = sorted.slice(i, i + quantity);
+      const isAdjacent = group.every(
+        (s, j) => j === 0 || s.index === group[j - 1].index + 1,
+      );
+      if (isAdjacent) {
+        return { selected: group, success: true };
+      }
     }
   }
 
