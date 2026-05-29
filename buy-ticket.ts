@@ -18,6 +18,7 @@ const QUANTITY = parseInt(process.env.TTM_QUANTITY || '1', 10);
 const ZONE_PRIORITY = (process.env.TTM_ZONE_PRIORITY || '').split(',').map(z => z.trim()).filter(z => z);
 const DELIVERY_METHOD = (process.env.TTM_DELIVERY_METHOD || 'pickup') as 'pickup' | 'postal';
 const PAYMENT_METHOD = (process.env.TTM_PAYMENT_METHOD || 'qr') as 'qr' | 'credit';
+const TARGET_ROUND_INDEX = parseInt(process.env.TARGET_ROUND_INDEX || '0', 10); // กำหนดรอบที่ต้องการซื้อ (0 = รอบแรก, 1 = รอบสอง, ...)
 // ============================================
 
 async function runBuyTicket(sessionFile: string, userIndex: number) {
@@ -56,21 +57,61 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
     // --- Step 1: Click Buy Now ---
     console.log(`${logPrefix} 🔍  กำลังหาปุ่มซื้อบัตร...`);
     const buySelectors = [
-      'a:has-text("ซื้อบัตร")', 'a:has-text("Buy")', 'a:has-text("BUY")',
-      'button:has-text("ซื้อบัตร")', 'button:has-text("Buy")',
-      '.btn-buy', '[class*="buy"]'
+      `span:has-text("ซื้อบัตร")`,
     ];
+
+    console.log(`${logPrefix} 🛒  พยายามกดปุ่มซื้อบัตร...`);
 
     let clicked = false;
     for (const selector of buySelectors) {
       try {
-        const btn = page.locator(selector).first();
-        await btn.waitFor({ state: 'visible', timeout: 5000 });
+        const btn = page.locator(selector).nth(TARGET_ROUND_INDEX);
+        await btn.waitFor({ state: 'visible', timeout: 3000 });
         await btn.click();
-        console.log(`${logPrefix} ✅  กดปุ่มซื้อบัตรแล้ว`);
+        console.log(`${logPrefix} ✅  กดปุ่มซื้อบัตรสำหรับรอบที่ ${TARGET_ROUND_INDEX + 1} แล้ว`);
         clicked = true;
-        break;
-      } catch {}
+
+        const nextStateLocator = page.locator('.map-zone')
+          .or(page.locator('#myform'))
+          .or(page.locator('#rdagree'));
+
+        await nextStateLocator.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
+          console.log(`${logPrefix} ⚠️  ยังไม่พบหน้าถัดไปที่คาดหวัง`);
+        });
+
+        const isMapZoneVisible = await page.locator('.map-zone').isVisible();
+        const isNeedMoreInfo = await page.locator('#myform').isVisible();
+        const isNeedAcceptTerms = await page.locator('#rdagree').isVisible();
+
+        if (isMapZoneVisible) {
+          console.log(`${logPrefix} ✅  หน้าเลือกโซนโหลดแล้ว`);
+          break;
+        } else if (isNeedMoreInfo) {
+          console.log(`${logPrefix} 📝  กำลังกรอกข้อมูลเพิ่มเติม (ID Card/Passport)...`);
+          const inputTypes = "thaiid"; // หรือ "passport" ขึ้นอยู่กับลูกค้าต้องการ
+          await page.click(`button[data-method="${inputTypes}"]`);
+
+          if (inputTypes === "thaiid") {
+            await page.fill('input#txt_verifycode', '1234567890123'); // ใส่ค่าตัวอย่าง id
+          } else {
+            // await page.fill('input#passport_country', 'TH'); // ใส่ค่าตัวอย่าง TODO: handle dropdown เพราะในการส่งค่าต้องใช้เป็น data-code ไม้่ใช่ data-name
+            await page.fill('input#txt_verifycode', 'A12345678'); // ใส่ค่าตัวอย่าง passport
+          }
+          await page.click('button#btnconfirm');
+          break;
+        } else if (isNeedAcceptTerms) {
+          console.log(`${logPrefix} ⚖️  กำลังยอมรับเงื่อนไข...`);
+          await page.check('#rdagree');
+          await page.click('input#rdagree');
+          await page.click('button#btn_verify');
+          break;
+        } else {
+          console.log(`${logPrefix} ⚠️  ไม่พบหน้าถัดไปที่คาดหวังหลังจากกดซื้อบัตร`);
+        }
+
+      } catch {
+        console.error(`${logPrefix} ❌  ไม่สามารถกดปุ่มซื้อบัตรด้วย selector: ${selector} ได้`);
+      }
     }
 
     if (!clicked) {
@@ -81,7 +122,7 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
         const seatPage = new SeatPage(page);
         console.log(`${logPrefix} ⏳  กำลังโหลดหน้าเลือกโซน...`);
         await seatPage.waitForSeatMap();
-        
+
         const selectedZone = await selectZone(seatPage, ZONE_PRIORITY);
         if (selectedZone) {
           console.log(`${logPrefix} ✅  เลือกโซน: ${selectedZone}`);
@@ -92,7 +133,7 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
         // --- Step 3: Select Seats ---
         console.log(`${logPrefix} ⏳  กำลังหาที่นั่ง (${QUANTITY} ที่)...`);
         await seatPage.setQuantity(QUANTITY);
-        
+
         const seatsByRow = await seatPage.getAllSeatsByRow();
         const result = selectSeats({ seatsByRow, quantity: QUANTITY });
 
@@ -110,10 +151,10 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
           await checkoutPage.selectDeliveryMethod(DELIVERY_METHOD);
           await checkoutPage.selectPaymentMethod(PAYMENT_METHOD);
           await checkoutPage.acceptTermsIfRequired();
-          
+
           console.log(`${logPrefix} 🚀  กำลังยืนยันคำสั่งซื้อ...`);
           await checkoutPage.confirmOrder();
-          
+
           if (PAYMENT_METHOD === 'qr') {
             console.log(`${logPrefix} ⏳  กำลังรอ QR PromptPay...`);
             await checkoutPage.waitForQR();
@@ -131,7 +172,7 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
     }
 
     console.log(`${logPrefix} 💡  เสร็จสิ้นขั้นตอนสำหรับ User ${userIndex} (Browser จะเปิดค้างไว้ 10 นาที)`);
-    await page.waitForTimeout(600_000); 
+    await page.waitForTimeout(600_000);
 
   } catch (err) {
     console.error(`${logPrefix} ❌  Fatal error:`, err);
