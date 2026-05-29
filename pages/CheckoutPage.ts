@@ -11,6 +11,7 @@ export const CHECKOUT_LOCATORS = {
   qrImage: 'div.qr-code-contriner img.img-full-width',
   qrContainer: 'div.qr-code-contriner',
   paymentExpiry: 'div.qr-code-expire-time',
+  ticketProtectCheckbox: 'input#ticket-protect-mobile',
 } as const;
 
 export class CheckoutPage {
@@ -36,6 +37,13 @@ export class CheckoutPage {
     const checkbox = this.page.locator(CHECKOUT_LOCATORS.termsCheckbox);
     if (await checkbox.isVisible() && !(await checkbox.isChecked())) {
       await checkbox.check();
+    }
+  }
+
+  async uncheckTicketProtection(): Promise<void> {
+    const protectionCheckbox = this.page.locator(CHECKOUT_LOCATORS.ticketProtectCheckbox);
+    if (await protectionCheckbox.isVisible() && (await protectionCheckbox.isChecked())) {
+      await this.page.click('label[for="ticket-protect-mobile"]');
     }
   }
 

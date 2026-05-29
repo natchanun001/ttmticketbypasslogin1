@@ -39,7 +39,7 @@ export class SeatPage {
 
   async waitForSeatMap(): Promise<void> {
     // รอแผนผังโซนหรือแผนผังที่นั่ง
-    await this.page.waitForSelector(`${SEAT_LOCATORS.seatMapContainer}, ${SEAT_LOCATORS.zoneContainer}`, { state: 'visible', timeout: 30000 }).catch(() => {
+    await this.page.waitForSelector(`${SEAT_LOCATORS.seatMapContainer}, ${SEAT_LOCATORS.zoneContainer}`, { state: 'attached', timeout: 30000 }).catch(() => {
       console.log('⚠️  ไม่พบหน้าผังอัตโนมัติ (หรืออาจจะยังโหลดไม่เสร็จ)');
     });
   }
@@ -163,7 +163,7 @@ export class SeatPage {
 
       for (let i = 0; i < quantity - current; i++) {
         await plusBtn.click();
-        await this.page.waitForTimeout(100);
+        // await this.page.waitForTimeout(100);
       }
     }
   }

@@ -16,7 +16,7 @@ const SESSIONS_DIR = path.resolve(__dirname, 'sessions');
 const EVENT_URL = process.env.TTM_EVENT_URL || 'https://event.thaiticketmajor.com';
 const QUANTITY = parseInt(process.env.TTM_QUANTITY || '1', 10);
 const ZONE_PRIORITY = (process.env.TTM_ZONE_PRIORITY || '').split(',').map(z => z.trim()).filter(z => z);
-const DELIVERY_METHOD = (process.env.TTM_DELIVERY_METHOD || 'pickup') as 'pickup' | 'postal';
+const DELIVERY_METHOD = (process.env.TTM_DELIVERY_METHOD || 'pickup') as 'pickup' | 'postal'; // เลือกวิธีรับบัตร btn_pickup | btn_thaipost | btn_eticket
 const PAYMENT_METHOD = (process.env.TTM_PAYMENT_METHOD || 'qr') as 'qr' | 'credit';
 const TARGET_ROUND_INDEX = parseInt(process.env.TARGET_ROUND_INDEX || '0', 10);
 const ID_NUMBER = process.env.TTM_ID || '1234567890123';
@@ -45,7 +45,8 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
     const page = await context.newPage();
 
     console.log(`${logPrefix} 🌐  กำลังไปที่ event page...`);
-    await page.goto(EVENT_URL, { waitUntil: 'domcontentloaded' });
+    // await page.goto(EVENT_URL, { waitUntil: 'domcontentloaded' });
+    await page.goto(EVENT_URL);
 
     if (page.url().includes('signin')) {
       console.error(`${logPrefix} ❌  Session หมดอายุ — กรุณารัน manual-login.ts ใหม่อีกครั้ง`);
@@ -63,13 +64,13 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
     for (const selector of buySelectors) {
       try {
         const btn = page.locator(selector).nth(TARGET_ROUND_INDEX);
-        await btn.waitFor({ state: 'visible', timeout: 3000 });
+        // await btn.waitFor({ state: 'visible', timeout: 3000 });
         await btn.click();
         console.log(`${logPrefix} ✅  กดปุ่มซื้อบัตรสำหรับรอบที่ ${TARGET_ROUND_INDEX + 1} แล้ว`);
         clicked = true;
 
         const nextStateLocator = page.locator('.map-zone').or(page.locator('form#myform')).or(page.locator('#rdagree'));
-        await nextStateLocator.waitFor({ state: 'visible', timeout: 10000 }).catch(() => { });
+        // await nextStateLocator.waitFor({ state: 'visible', timeout: 10000 }).catch(() => { });
 
         const isNeedMoreInfo = await page.locator('form#myform').isVisible();
         const isNeedAcceptTerms = await page.locator('#rdagree').isVisible();
@@ -114,7 +115,8 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
 
         // รอโหลดผังที่นั่งในโซน
         console.log(`${logPrefix} ⏳  กำลังโหลดผังที่นั่งในโซน ${zoneToTry}...`);
-        await page.waitForSelector('#tableseats', { timeout: 10000 }).catch(() => { });
+        // await page.waitForSelector('#tableseats', { timeout: 10000 }).catch(() => { });
+        await page.waitForSelector('#tableseats');
 
         await seatPage.setQuantity(QUANTITY);
         const seatsByRow = await seatPage.getAllSeatsByRow();
@@ -132,7 +134,7 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
         } else {
           console.log(`${logPrefix} 🔄  โซน ${zoneToTry} ไม่มีที่นั่งว่างที่ตรงเงื่อนไข กำลังถอยออก...`);
           await page.goBack();
-          await page.waitForTimeout(1000);
+          // await page.waitForTimeout(1000);
         }
       } catch (err) {
         console.error(`${logPrefix} ❌  พบปัญหาในโซน ${zoneToTry}:`, err);
@@ -144,17 +146,18 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
       // --- Step 4: Checkout ---
       console.log(`${logPrefix} ⏳  กำลังไปหน้าชำระเงิน...`);
       const checkoutPage = new CheckoutPage(page);
-      // เลือกวิธีรับบัตร btn_pickup | btn_thaipost | btn_eticket
       await checkoutPage.selectDeliveryMethod(DELIVERY_METHOD);
-      await checkoutPage.selectPaymentMethod(PAYMENT_METHOD);
+      await checkoutPage.uncheckTicketProtection();
       await checkoutPage.acceptTermsIfRequired();
+      await checkoutPage.selectPaymentMethod(PAYMENT_METHOD);
+      await page.pause();
 
-      console.log(`${logPrefix} 🚀  กำลังยืนยันคำสั่งซื้อ...`);
-      await checkoutPage.confirmOrder();
+      // console.log(`${logPrefix} 🚀  กำลังยืนยันคำสั่งซื้อ...`);
+      // await checkoutPage.confirmOrder();
 
-      if (PAYMENT_METHOD === 'qr') {
-        await checkoutPage.waitForQR();
-      }
+      // if (PAYMENT_METHOD === 'qr') {
+      //   await checkoutPage.waitForQR();
+      // }
     } else {
       console.error(`${logPrefix} ❌  ไล่ครบทุกโซนใน Priority แล้วแต่ไม่พบที่นั่งว่างเลย หยุดทำงาน`);
     }
