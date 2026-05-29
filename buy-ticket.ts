@@ -19,6 +19,7 @@ const ZONE_PRIORITY = (process.env.TTM_ZONE_PRIORITY || '').split(',').map(z => 
 const DELIVERY_METHOD = (process.env.TTM_DELIVERY_METHOD || 'pickup') as 'pickup' | 'postal';
 const PAYMENT_METHOD = (process.env.TTM_PAYMENT_METHOD || 'qr') as 'qr' | 'credit';
 const TARGET_ROUND_INDEX = parseInt(process.env.TARGET_ROUND_INDEX || '0', 10);
+const ID_NUMBER = process.env.TTM_ID || '1234567890123';
 // ============================================
 
 async function runBuyTicket(sessionFile: string, userIndex: number) {
@@ -74,12 +75,9 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
         const isNeedAcceptTerms = await page.locator('#rdagree').isVisible();
 
         if (isNeedMoreInfo) {
-          console.log(`${logPrefix} 📝  กำลังกรอกข้อมูลเพิ่มเติม (ID Card/Passport)...`);
-          await page.click(`button[data-method="passport"]`);
-          await page.click('div#verify-country-wrap');
-          await page.keyboard.type("Afghanistan");
-          await page.click(`div[data-name="Afghanistan"]`);
-          await page.fill('input#txt_verifycode', 'AC999888');
+          console.log(`${logPrefix} 📝  กำลังกรอกข้อมูลเพิ่มเติม (ID Card)...`);
+          await page.click(`button[data-method="thaiid"]`);
+          await page.fill('input#txt_verifycode', ID_NUMBER);
           await page.click('button#btnconfirm');
         } else if (isNeedAcceptTerms) {
           console.log(`${logPrefix} ⚖️  กำลังยอมรับเงื่อนไข...`);
