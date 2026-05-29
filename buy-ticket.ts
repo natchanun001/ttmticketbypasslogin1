@@ -14,19 +14,23 @@ const SESSIONS_DIR = path.resolve(__dirname, 'sessions');
 
 // ===== ตั้งค่า Event และ การซื้อบัตร =====
 const EVENT_URL = process.env.TTM_EVENT_URL || 'https://event.thaiticketmajor.com';
-const QUANTITY = parseInt(process.env.TTM_QUANTITY || '1', 10);
+const QUANTITIES = (process.env.TTM_QUANTITY || '1').split(',').map(q => parseInt(q.trim(), 10));
 const ZONE_PRIORITY = (process.env.TTM_ZONE_PRIORITY || '').split(',').map(z => z.trim()).filter(z => z);
-const DELIVERY_METHOD = (process.env.TTM_DELIVERY_METHOD || 'pickup') as 'pickup' | 'postal'; // เลือกวิธีรับบัตร btn_pickup | btn_thaipost | btn_eticket
+const DELIVERY_METHOD = (process.env.TTM_DELIVERY_METHOD || 'pickup') as 'pickup' | 'postal';
 const PAYMENT_METHOD = (process.env.TTM_PAYMENT_METHOD || 'qr') as 'qr' | 'credit';
 const TARGET_ROUND_INDEX = parseInt(process.env.TARGET_ROUND_INDEX || '0', 10);
-const ID_NUMBER = process.env.TTM_ID || '1234567890123';
+const ID_NUMBERS = (process.env.TTM_ID || '').split(',').map(id => id.trim());
 // ============================================
 
 async function runBuyTicket(sessionFile: string, userIndex: number) {
   const sessionPath = path.join(SESSIONS_DIR, sessionFile);
   const logPrefix = `[User ${userIndex}]`;
 
-  console.log(`${logPrefix} 🎫  กำลังเริ่มทำงานสำหรับ session: ${sessionFile}`);
+  // เลือกค่าตามลำดับ User (ถ้ามีไม่พอให้ใช้ตัวแรก)
+  const myIdNumber = ID_NUMBERS[userIndex - 1] || ID_NUMBERS[0] || '1234567890123';
+  const myQuantity = QUANTITIES[userIndex - 1] || QUANTITIES[0] || 1;
+
+  console.log(`${logPrefix} 🎫  เริ่มทำงานสำหรับ: ${sessionFile} (ID: ${myIdNumber}, จำนวน: ${myQuantity})`);
 
   const browser = await chromium.launch({
     headless: false,
@@ -74,21 +78,17 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
     for (const selector of buySelectors) {
       try {
         const btn = page.locator(selector).nth(TARGET_ROUND_INDEX);
-        // await btn.waitFor({ state: 'visible', timeout: 3000 });
         await btn.click();
         console.log(`${logPrefix} ✅  กดปุ่มซื้อบัตรสำหรับรอบที่ ${TARGET_ROUND_INDEX + 1} แล้ว`);
         clicked = true;
-
-        const nextStateLocator = page.locator('.map-zone').or(page.locator('form#myform')).or(page.locator('#rdagree'));
-        // await nextStateLocator.waitFor({ state: 'visible', timeout: 10000 }).catch(() => { });
 
         const isNeedMoreInfo = await page.locator('form#myform').isVisible();
         const isNeedAcceptTerms = await page.locator('#rdagree').isVisible();
 
         if (isNeedMoreInfo) {
-          console.log(`${logPrefix} 📝  กำลังกรอกข้อมูลเพิ่มเติม (ID Card)...`);
+          console.log(`${logPrefix} 📝  กำลังกรอกข้อมูลเพิ่มเติม (ID Card: ${myIdNumber})...`);
           await page.click(`button[data-method="thaiid"]`);
-          await page.fill('input#txt_verifycode', ID_NUMBER);
+          await page.fill('input#txt_verifycode', myIdNumber);
           await page.click('button#btnconfirm');
         } else if (isNeedAcceptTerms) {
           console.log(`${logPrefix} ⚖️  กำลังยอมรับเงื่อนไข...`);
@@ -123,14 +123,12 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
           continue;
         }
 
-        // รอโหลดผังที่นั่งในโซน
         console.log(`${logPrefix} ⏳  กำลังโหลดผังที่นั่งในโซน ${zoneToTry}...`);
-        // await page.waitForSelector('#tableseats', { timeout: 10000 }).catch(() => { });
         await page.waitForSelector('#tableseats');
 
-        await seatPage.setQuantity(QUANTITY);
+        await seatPage.setQuantity(myQuantity);
         const seatsByRow = await seatPage.getAllSeatsByRow();
-        const result = selectSeats({ seatsByRow, quantity: QUANTITY });
+        const result = selectSeats({ seatsByRow, quantity: myQuantity });
 
         if (result.success) {
           console.log(`${logPrefix} 🎉  พบที่นั่งในโซน ${zoneToTry}! กำลังเลือก...`);
@@ -144,7 +142,6 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
         } else {
           console.log(`${logPrefix} 🔄  โซน ${zoneToTry} ไม่มีที่นั่งว่างที่ตรงเงื่อนไข กำลังถอยออก...`);
           await page.goBack();
-          // await page.waitForTimeout(1000);
         }
       } catch (err) {
         console.error(`${logPrefix} ❌  พบปัญหาในโซน ${zoneToTry}:`, err);
@@ -195,7 +192,7 @@ async function main() {
 
   console.log(`\n🎫  TTM Buy Ticket (Priority Loop Mode)\n`);
   console.log(`   Event URL : ${EVENT_URL}`);
-  console.log(`   Quantity  : ${QUANTITY}`);
+  console.log(`   Quantity  : ${QUANTITIES.join(', ')}`);
   console.log(`   Priority  : ${ZONE_PRIORITY.join(' > ')}\n`);
 
   await Promise.all(sessionFiles.map((file, index) => runBuyTicket(file, index + 1)));

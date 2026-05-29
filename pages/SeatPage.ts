@@ -96,45 +96,95 @@ export class SeatPage {
     return label;
   }
 
+  // async getAllSeatsByRow(): Promise<Map<string, SeatInfo[]>> {
+  //   console.log('🔍  กำลังดึงข้อมูลที่นั่งว่าง...');
+  //   const rows = this.page.locator(SEAT_LOCATORS.seatRow);
+  //   const rowCount = await rows.count();
+  //   const seatMap = new Map<string, SeatInfo[]>();
+
+  //   for (let r = 0; r < rowCount; r++) {
+  //     const row = rows.nth(r);
+
+  //     // หาชื่อแถว (เช่น A, B, C)
+  //     const headRow = row.locator(SEAT_LOCATORS.seatRowLabel);
+  //     if (await headRow.count() === 0) continue;
+
+  //     const rowLabel = (await headRow.first().innerText()).trim();
+  //     if (!rowLabel) continue;
+
+  //     // หาที่นั่งที่ว่างในแถวนี้
+  //     const availableSeats = row.locator(SEAT_LOCATORS.seatAvailable);
+  //     const seatCount = await availableSeats.count();
+  //     const rowSeats: SeatInfo[] = [];
+
+  //     for (let s = 0; s < seatCount; s++) {
+  //       const seat = availableSeats.nth(s);
+  //       const seatText = await seat.innerText();
+  //       const seatIndex = parseInt(seatText.trim(), 10);
+
+  //       if (!isNaN(seatIndex)) {
+  //         rowSeats.push({
+  //           row: rowLabel,
+  //           index: seatIndex,
+  //           locator: seat
+  //         });
+  //       }
+  //     }
+
+  //     if (rowSeats.length > 0) {
+  //       seatMap.set(rowLabel, rowSeats);
+  //       console.log(`   📍 แถว ${rowLabel}: พบที่นั่งว่าง ${rowSeats.length} ที่`);
+  //     }
+  //   }
+
+  //   return seatMap;
+  // }
+
   async getAllSeatsByRow(): Promise<Map<string, SeatInfo[]>> {
     console.log('🔍  กำลังดึงข้อมูลที่นั่งว่าง...');
-    const rows = this.page.locator(SEAT_LOCATORS.seatRow);
-    const rowCount = await rows.count();
-    const seatMap = new Map<string, SeatInfo[]>();
-
-    for (let r = 0; r < rowCount; r++) {
-      const row = rows.nth(r);
-
-      // หาชื่อแถว (เช่น A, B, C)
-      const headRow = row.locator(SEAT_LOCATORS.seatRowLabel);
-      if (await headRow.count() === 0) continue;
-
-      const rowLabel = (await headRow.first().innerText()).trim();
-      if (!rowLabel) continue;
-
-      // หาที่นั่งที่ว่างในแถวนี้
-      const availableSeats = row.locator(SEAT_LOCATORS.seatAvailable);
-      const seatCount = await availableSeats.count();
-      const rowSeats: SeatInfo[] = [];
-
-      for (let s = 0; s < seatCount; s++) {
-        const seat = availableSeats.nth(s);
-        const seatText = await seat.innerText();
-        const seatIndex = parseInt(seatText.trim(), 10);
-
-        if (!isNaN(seatIndex)) {
-          rowSeats.push({
-            row: rowLabel,
-            index: seatIndex,
-            locator: seat
-          });
+    const scrapedData = await this.page.evaluate((locators) => {
+      const rowElements = document.querySelectorAll(locators.seatRow);
+      const results: { rowLabel: string, seats: { index: number, nth: number }[] }[] = [];
+      
+      rowElements.forEach((row) => {
+        const headRow = row.querySelector(locators.seatRowLabel);
+        if (!headRow) return;
+        
+        const rowLabel = (headRow as HTMLElement).innerText.trim();
+        if (!rowLabel) return;
+        
+        const availableSeats = row.querySelectorAll(locators.seatAvailable);
+        const rowSeats: { index: number, nth: number }[] = [];
+        
+        availableSeats.forEach((seat, idx) => {
+          const seatText = (seat as HTMLElement).innerText.trim();
+          const seatIndex = parseInt(seatText, 10);
+          if (!isNaN(seatIndex)) {
+            rowSeats.push({ index: seatIndex, nth: idx });
+          }
+        });
+        
+        if (rowSeats.length > 0) {
+          results.push({ rowLabel, seats: rowSeats });
         }
-      }
+      });
+      
+      return results;
+    }, SEAT_LOCATORS);
 
-      if (rowSeats.length > 0) {
-        seatMap.set(rowLabel, rowSeats);
-        console.log(`   📍 แถว ${rowLabel}: พบที่นั่งว่าง ${rowSeats.length} ที่`);
-      }
+    const seatMap = new Map<string, SeatInfo[]>();
+    
+    // แปลงข้อมูลที่ scrape ได้กลับเป็น SeatInfo พร้อม Locator
+    for (const rowData of scrapedData) {
+      const rowLocator = this.page.locator(SEAT_LOCATORS.seatRow).filter({ hasText: rowData.rowLabel }).first();
+      const rowSeats: SeatInfo[] = rowData.seats.map(s => ({
+        row: rowData.rowLabel,
+        index: s.index,
+        locator: rowLocator.locator(SEAT_LOCATORS.seatAvailable).nth(s.nth)
+      }));
+      
+      seatMap.set(rowData.rowLabel, rowSeats);
+      console.log(`   📍 แถว ${rowData.rowLabel}: พบที่นั่งว่าง ${rowSeats.length} ที่`);
     }
 
     return seatMap;
