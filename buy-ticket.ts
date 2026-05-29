@@ -44,9 +44,19 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
 
     const page = await context.newPage();
 
+    // --- Resource Blocking ---
+    if (process.env.BLOCK_RESOURCES === 'true') {
+      await page.route('**/*', (route) => {
+        const resourceType = route.request().resourceType();
+        if (['image', 'font', 'media'].includes(resourceType)) {
+          return route.abort();
+        }
+        return route.continue();
+      });
+    }
+
     console.log(`${logPrefix} 🌐  กำลังไปที่ event page...`);
-    // await page.goto(EVENT_URL, { waitUntil: 'domcontentloaded' });
-    await page.goto(EVENT_URL);
+    await page.goto(EVENT_URL, { waitUntil: 'domcontentloaded' });
 
     if (page.url().includes('signin')) {
       console.error(`${logPrefix} ❌  Session หมดอายุ — กรุณารัน manual-login.ts ใหม่อีกครั้ง`);
@@ -150,7 +160,6 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
       await checkoutPage.uncheckTicketProtection();
       await checkoutPage.acceptTermsIfRequired();
       await checkoutPage.selectPaymentMethod(PAYMENT_METHOD);
-      await page.pause();
 
       // console.log(`${logPrefix} 🚀  กำลังยืนยันคำสั่งซื้อ...`);
       // await checkoutPage.confirmOrder();
