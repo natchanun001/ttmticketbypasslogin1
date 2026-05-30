@@ -51,10 +51,17 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
     // --- Resource Blocking ---
     if (process.env.BLOCK_RESOURCES === 'true') {
       await page.route('**/*', (route) => {
-        const resourceType = route.request().resourceType();
-        if (['image', 'font', 'media'].includes(resourceType)) {
+        const req = route.request();
+        const type = req.resourceType();
+        const url = req.url();
+
+        if (
+          ['image', 'font', 'media'].includes(type) ||
+          /youtube\.com|youtu\.be|facebook\.com|fbcdn\.net/i.test(url)
+        ) {
           return route.abort();
         }
+
         return route.continue();
       });
     }
@@ -82,8 +89,9 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
         console.log(`${logPrefix} ✅  กดปุ่มซื้อบัตรสำหรับรอบที่ ${TARGET_ROUND_INDEX + 1} แล้ว`);
         clicked = true;
 
-        const isNeedMoreInfo = await page.locator('form#myform').isVisible();
-        const isNeedAcceptTerms = await page.locator('#rdagree').isVisible();
+        await page.waitForLoadState('domcontentloaded', { timeout: 2000 });
+        const isNeedMoreInfo = await page.isVisible('form#myform');
+        const isNeedAcceptTerms = await page.isVisible('#rdagree');
 
         if (isNeedMoreInfo) {
           console.log(`${logPrefix} 📝  กำลังกรอกข้อมูลเพิ่มเติม (ID Card: ${myIdNumber})...`);
