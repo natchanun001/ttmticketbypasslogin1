@@ -20,6 +20,7 @@ const DELIVERY_METHOD = (process.env.TTM_DELIVERY_METHOD || 'pickup') as 'pickup
 const PAYMENT_METHOD = (process.env.TTM_PAYMENT_METHOD || 'qr') as 'qr' | 'credit';
 const TARGET_ROUND_INDEX = parseInt(process.env.TARGET_ROUND_INDEX || '0', 10);
 const ID_NUMBERS = (process.env.TTM_ID || '').split(',').map(id => id.trim());
+const MEMBER_CODES = (process.env.TTM_MEMBER_CODE || '').split(',').map(code => code.trim());
 // ============================================
 
 async function runBuyTicket(sessionFile: string, userIndex: number) {
@@ -29,12 +30,13 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
   // เลือกค่าตามลำดับ User (ถ้ามีไม่พอให้ใช้ตัวแรก)
   const myIdNumber = ID_NUMBERS[userIndex - 1] || ID_NUMBERS[0] || '1234567890123';
   const myQuantity = QUANTITIES[userIndex - 1] || QUANTITIES[0] || 1;
+  const myMemberCode = MEMBER_CODES[userIndex - 1] || MEMBER_CODES[0] || '';
 
-  console.log(`${logPrefix} 🎫  เริ่มทำงานสำหรับ: ${sessionFile} (ID: ${myIdNumber}, จำนวน: ${myQuantity})`);
+  console.log(`${logPrefix} 🎫  เริ่มทำงานสำหรับ: ${sessionFile} (ID: ${myIdNumber}, จำนวน: ${myQuantity}, Member Code: ${myMemberCode})`);
 
   const browser = await chromium.launch({
     headless: false,
-    args: ['--start-maximized'],
+    // args: ['--start-maximized'],
   });
 
   try {
@@ -92,6 +94,7 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
         await page.waitForLoadState('domcontentloaded', { timeout: 2000 });
         const isNeedMoreInfo = await page.isVisible('form#myform');
         const isNeedAcceptTerms = await page.isVisible('#rdagree');
+        const isNeedMemberCode = await page.isVisible('input#txt_verifycode');
 
         if (isNeedMoreInfo) {
           console.log(`${logPrefix} 📝  กำลังกรอกข้อมูลเพิ่มเติม (ID Card: ${myIdNumber})...`);
@@ -102,6 +105,10 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
           console.log(`${logPrefix} ⚖️  กำลังยอมรับเงื่อนไข...`);
           await page.click('label.label-checkbox');
           await page.click('button#btn_verify');
+        } else if (isNeedMemberCode) {
+          console.log(`${logPrefix} 🧑‍💻  กำลังกรอกโค้ดสมาชิก (Code: ${myMemberCode})...`);
+          await page.fill('input#txt_verifycode', myMemberCode);
+          await page.click('button#btnconfirm');
         }
         break;
       } catch {
