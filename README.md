@@ -12,11 +12,13 @@ This project contains a Playwright-based structure to automate the login process
 ## Setup
 
 1. Install dependencies:
+
    ```bash
    npm install
    ```
 
 2. Install Playwright browsers:
+
    ```bash
    npx playwright install
    ```
@@ -28,11 +30,13 @@ This project contains a Playwright-based structure to automate the login process
 ## Running Tests
 
 - Run all tests (headless):
+
   ```bash
   npm test
   ```
 
 - Run tests in headed mode (visible browser):
+
   ```bash
   npm run test:headed
   ```
@@ -47,6 +51,7 @@ This project contains a Playwright-based structure to automate the login process
 - **Access Denied (403):** ThaiTicketMajor has strong bot protection. If you encounter an "Access Denied" page, try running in **headed mode** (`npm run test:headed`) and manually solve any CAPTCHAs or challenges.
 - **Selectors:** If the login page structure changes, update the selectors in `pages/LoginPage.ts`. Currently, it uses common name attributes like `email` and `password`.
 - **URL:** The target URL is set to `https://event.thaiticketmajor.com/user/signin.php?redir=/index.html`. If you need to login via the main member page, update the `baseURL` in `playwright.config.ts` or the `goto()` method in `LoginPage.ts`.
+
 ## วิธีการใช้งาน (Manual Login Flow)
 
 ทำตามลำดับนี้เพื่อบันทึก Session และซื้อบัตร:
@@ -71,10 +76,19 @@ This project contains a Playwright-based structure to automate the login process
 ### การตั้งค่าเพิ่มเติม (.env)
 
 คุณสามารถตั้งค่าการซื้อบัตรอัตโนมัติได้ในไฟล์ `.env`:
+
 - `TTM_QUANTITY`: จำนวนบัตรที่ต้องการ (เช่น 1, 2)
 - `TTM_ZONE_PRIORITY`: ลำดับโซนที่ต้องการ (เช่น A1,B1,A2) ถ้าโซนแรกเต็มจะข้ามไปโซนถัดไป
+- `TARGET_ROUND_INDEX`: ลำดับรอบที่ต้องการโดยเริ่มนับจาก 0 เช่น (รอบแรก = 0, รอบสอง = 1, ...)
 - `TTM_DELIVERY_METHOD`: วิธีรับบัตร (`pickup` รับหน้างาน, `postal` ส่งไปรษณีย์)
 - `TTM_PAYMENT_METHOD`: วิธีชำระเงิน (`qr` สำหรับ PromptPay, `credit` สำหรับบัตรเครดิต)
+- `TTM_ID`: รหัสบัตรประชาชน (หากมีหลาย user ให้ใส่ , เพื่อให้แยกบัตรประชาชนตามจำนวน user)
+- `TTM_MEMBER_CODE`: รหัสเมมเบอร์ (หากมีหลาย user ให้ใส่ , เพื่อให้แยก member code ตามจำนวน user)
 
-# ttmTicketBypassLogin1
-# ttmTicketBypassLogin1
+# Latest Update
+
+1. เข้าโซน -> อ่านผังที่นั่ง
+2. กรองที่นั่งที่ (1. บอทตัวอื่นจอง 2. เคยติด Alert)
+3. วนลูปกดทีละที่(หากเปิดหลายจอพร้อมกันบอทจะไม่เลือกที่นั่งเดียวกัน) -> [เช็ค Alert ทันที] -> ถ้าโดนแย่ง -> Retry ทันที (ไม่เลือกที่เดิม)
+4. [เช็คจำนวนที่กดได้จริง] -> ถ้าครบ -> Proceed -> เช็ค Alert สุดท้าย
+5. ถ้ายังไม่สำเร็จ -> วนหาที่ใหม่ในโซนเดิม (สูงสุด 10 รอบ) -> ถ้าหมดโซน -> ไปโซนถัดไป
