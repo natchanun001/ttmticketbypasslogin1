@@ -12,6 +12,9 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 const SESSIONS_DIR = path.resolve(__dirname, 'sessions');
 
+// ใช้ล็อคที่นั่งข้าม Browser Context ในเครื่องเดียวกัน เพื่อไม่ให้บอทแย่งกันเอง
+const globalSeatLock = new Set<string>();
+
 // ===== ตั้งค่า Event และ การซื้อบัตร =====
 const EVENT_URL = process.env.TTM_EVENT_URL || 'https://event.thaiticketmajor.com';
 const QUANTITIES = (process.env.TTM_QUANTITY || '1').split(',').map(q => parseInt(q.trim(), 10));
@@ -20,6 +23,7 @@ const DELIVERY_METHOD = (process.env.TTM_DELIVERY_METHOD || 'pickup') as 'pickup
 const PAYMENT_METHOD = (process.env.TTM_PAYMENT_METHOD || 'qr') as 'qr' | 'credit';
 const TARGET_ROUND_INDEX = parseInt(process.env.TARGET_ROUND_INDEX || '0', 10);
 const ID_NUMBERS = (process.env.TTM_ID || '').split(',').map(id => id.trim());
+const MEMBER_CODES = (process.env.TTM_MEMBER_CODE || '').split(',').map(code => code.trim());
 // ============================================
 
 async function runBuyTicket(sessionFile: string, userIndex: number) {
@@ -29,12 +33,13 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
   // เลือกค่าตามลำดับ User (ถ้ามีไม่พอให้ใช้ตัวแรก)
   const myIdNumber = ID_NUMBERS[userIndex - 1] || ID_NUMBERS[0] || '1234567890123';
   const myQuantity = QUANTITIES[userIndex - 1] || QUANTITIES[0] || 1;
+  const myMemberCode = MEMBER_CODES[userIndex - 1] || MEMBER_CODES[0] || '';
 
-  console.log(`${logPrefix} 🎫  เริ่มทำงานสำหรับ: ${sessionFile} (ID: ${myIdNumber}, จำนวน: ${myQuantity})`);
+  console.log(`${logPrefix} 🎫  เริ่มทำงานสำหรับ: ${sessionFile} (ID: ${myIdNumber}, จำนวน: ${myQuantity}, Member Code: ${myMemberCode})`);
 
   const browser = await chromium.launch({
     headless: false,
-    args: ['--start-maximized'],
+    // args: ['--start-maximized'],
   });
 
   try {
@@ -92,6 +97,7 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
         await page.waitForLoadState('domcontentloaded', { timeout: 2000 });
         const isNeedMoreInfo = await page.isVisible('form#myform');
         const isNeedAcceptTerms = await page.isVisible('#rdagree');
+        const isNeedMemberCode = await page.isVisible('input#txt_verifycode');
 
         if (isNeedMoreInfo) {
           console.log(`${logPrefix} 📝  กำลังกรอกข้อมูลเพิ่มเติม (ID Card: ${myIdNumber})...`);
@@ -102,6 +108,10 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
           console.log(`${logPrefix} ⚖️  กำลังยอมรับเงื่อนไข...`);
           await page.click('label.label-checkbox');
           await page.click('button#btn_verify');
+        } else if (isNeedMemberCode) {
+          console.log(`${logPrefix} 🧑‍💻  กำลังกรอกโค้ดสมาชิก (Code: ${myMemberCode})...`);
+          await page.fill('input#txt_verifycode', myMemberCode);
+          await page.click('button#btnconfirm');
         }
         break;
       } catch {
@@ -120,9 +130,18 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
 
     console.log(`${logPrefix} ⏳  เริ่มค้นหาที่นั่งตามลำดับ Priority...`);
 
+    const localDeadSeats = new Set<string>(); // ที่นั่งที่เสียในรอบนี้ (ติด Alert)
+
     for (const zoneToTry of ZONE_PRIORITY) {
       try {
         console.log(`${logPrefix} 🔍  กำลังลองเข้าโซน: ${zoneToTry}`);
+        
+        // ป้องกันการติดอยู่ในโซนเดิม: ถ้าเจอ #tableseats แสดงว่ายังไม่ออกหน้าผังโซน
+        if (await page.locator('#tableseats').isVisible()) {
+          console.log(`${logPrefix} 🔄  ยังค้างอยู่ในโซนอื่น กำลังถอยกลับไปหน้าผัง...`);
+          await page.goBack().catch(() => {});
+        }
+
         await seatPage.waitForSeatMap();
 
         const entered = await seatPage.selectZoneByLabel(zoneToTry);
@@ -132,28 +151,100 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
         }
 
         console.log(`${logPrefix} ⏳  กำลังโหลดผังที่นั่งในโซน ${zoneToTry}...`);
-        await page.waitForSelector('#tableseats');
+        await page.waitForSelector('#tableseats', { timeout: 10000 }).catch(() => {
+          throw new Error(`โหลดผังที่นั่งโซน ${zoneToTry} ไม่สำเร็จ`);
+        });
 
-        await seatPage.setQuantity(myQuantity);
-        const seatsByRow = await seatPage.getAllSeatsByRow();
-        const result = selectSeats({ seatsByRow, quantity: myQuantity });
+        // วนลูปเลือกที่นั่งในโซนนี้ (เผื่อติด Popup แย่งที่นั่ง)
+        let retryInZone = 0;
+        while (retryInZone < 10) {
+          await seatPage.setQuantity(myQuantity);
+          const seatsByRow = await seatPage.getAllSeatsByRow();
+          
+          // ใช้ globalSeatLock และ localDeadSeats เพื่อเลี่ยงที่นั่งที่ไม่ว่าง
+          const combinedExcludes = new Set([...globalSeatLock, ...localDeadSeats]);
+          
+          const result = selectSeats({ 
+            seatsByRow, 
+            quantity: myQuantity, 
+            zone: zoneToTry, 
+            excludeSet: combinedExcludes 
+          });
 
-        if (result.success) {
-          console.log(`${logPrefix} 🎉  พบที่นั่งในโซน ${zoneToTry}! กำลังเลือก...`);
-          for (const seat of result.selected) {
-            await seatPage.clickSeat(seat);
-            console.log(`${logPrefix} 💺  เลือก: แถว ${seat.row} เลขที่ ${seat.index}`);
+          if (result.success) {
+            console.log(`${logPrefix} 🎉  พบที่นั่งในโซน ${zoneToTry}! กำลังเลือก...`);
+            
+            let clickedKeys: string[] = [];
+            let collisionFound = false;
+
+            for (const seat of result.selected) {
+              const seatKey = `${zoneToTry}-${seat.row}-${seat.index}`;
+              globalSeatLock.add(seatKey); // จองไว้ในระบบบอทเราเองก่อน
+              
+              await seatPage.clickSeat(seat);
+              
+              // เช็ค Popup ทันทีหลังกดแต่ละที่นั่ง
+              const alert = page.locator('div#popup_alert');
+              if (await alert.isVisible({ timeout: 500 }).catch(() => false)) {
+                console.log(`${logPrefix} ⚠️  ที่นั่ง ${seat.row}-${seat.index} ถูกแย่ง! กำลังลองที่ใหม่...`);
+                await page.keyboard.press('Escape');
+                
+                // เก็บที่นั่งกลุ่มนี้ลง deadSeats เพื่อไม่ให้เลือกซ้ำอีก
+                result.selected.forEach(s => localDeadSeats.add(`${zoneToTry}-${s.row}-${s.index}`));
+                
+                collisionFound = true;
+                break; 
+              }
+              
+              clickedKeys.push(seatKey);
+              console.log(`${logPrefix} 💺  เลือก: แถว ${seat.row} เลขที่ ${seat.index}`);
+            }
+
+            if (collisionFound) {
+              retryInZone++;
+              continue; // วนหาที่ใหม่ในโซนเดิม
+            }
+
+            // ตรวจสอบความชัวร์ว่าเลือกที่นั่งครบตามจำนวนก่อนกด Proceed
+            if (clickedKeys.length === myQuantity) {
+              await seatPage.clickProceed();
+              
+              // เช็ค Alert สุดท้ายหลังกด Proceed
+              const finalAlert = page.locator('div#popup_alert');
+              if (await finalAlert.isVisible({ timeout: 500 }).catch(() => false)) {
+                console.log(`${logPrefix} ⚠️  ติดปัญหาตอนยืนยัน (Final Alert)! กำลังลองที่ใหม่...`);
+                await page.keyboard.press('Escape');
+                clickedKeys.forEach(key => localDeadSeats.add(key));
+                retryInZone++;
+                continue;
+              }
+              
+              seatFound = true;
+              break;
+            } else {
+              console.log(`${logPrefix} ⚠️  เลือกที่นั่งได้ไม่ครบ (${clickedKeys.length}/${myQuantity}) กำลังลองใหม่...`);
+              retryInZone++;
+              continue;
+            }
+          } else {
+            console.log(`${logPrefix} 🔄  โซน ${zoneToTry} ไม่มีที่นั่งว่างที่ตรงเงื่อนไข...`);
+            await page.goBack().catch(() => {});
+            break; // ออกจาก while ไปลองโซนถัดไป
           }
-          await seatPage.clickProceed();
-          seatFound = true;
+        }
+
+        if (seatFound) {
           break;
         } else {
-          console.log(`${logPrefix} 🔄  โซน ${zoneToTry} ไม่มีที่นั่งว่างที่ตรงเงื่อนไข กำลังถอยออก...`);
-          await page.goBack();
+          if (await page.locator('#tableseats').isVisible()) {
+            await page.goBack().catch(() => {});
+          }
         }
       } catch (err) {
         console.error(`${logPrefix} ❌  พบปัญหาในโซน ${zoneToTry}:`, err);
-        await page.goBack().catch(() => { });
+        if (await page.locator('#tableseats').isVisible()) {
+          await page.goBack().catch(() => { });
+        }
       }
     }
 

@@ -30,17 +30,23 @@ export async function selectZone(
 export function selectSeats(input: {
   seatsByRow: Map<string, SeatInfo[]>;
   quantity: number;
+  zone: string;
+  excludeSet: Set<string>;
 }): SeatSelectionResult {
-  const { seatsByRow, quantity } = input;
+  const { seatsByRow, quantity, zone, excludeSet } = input;
 
   // Simple strategy: take the first row that has enough consecutive seats
   const rows = [...seatsByRow.keys()].sort();
 
   for (const rowLabel of rows) {
     const seats = seatsByRow.get(rowLabel) ?? [];
-    if (seats.length < quantity) continue;
+    
+    // กรองที่นั่งที่ถูกบอทตัวอื่นจองไว้ หรือเคยติด Alert มาก่อน (Local/Global Lock)
+    const available = seats.filter(s => !excludeSet.has(`${zone}-${s.row}-${s.index}`));
+    
+    if (available.length < quantity) continue;
 
-    const sorted = [...seats].sort((a, b) => a.index - b.index);
+    const sorted = [...available].sort((a, b) => a.index - b.index);
 
     // Find consecutive seats
     for (let i = 0; i <= sorted.length - quantity; i++) {
