@@ -24,6 +24,7 @@ const PAYMENT_METHOD = (process.env.TTM_PAYMENT_METHOD || 'qr') as 'qr' | 'credi
 const TARGET_ROUND_INDEX = parseInt(process.env.TARGET_ROUND_INDEX || '0', 10);
 const ID_NUMBERS = (process.env.TTM_ID || '').split(',').map(id => id.trim());
 const MEMBER_CODES = (process.env.TTM_MEMBER_CODE || '').split(',').map(code => code.trim());
+const SEAT_MODES = (process.env.TTM_SEAT_MODE || 'FRONT_LEFT').split(',').map(m => m.trim().toUpperCase());
 // ============================================
 
 async function runBuyTicket(sessionFile: string, userIndex: number) {
@@ -34,8 +35,9 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
   const myIdNumber = ID_NUMBERS[userIndex - 1] || ID_NUMBERS[0] || '1234567890123';
   const myQuantity = QUANTITIES[userIndex - 1] || QUANTITIES[0] || 1;
   const myMemberCode = MEMBER_CODES[userIndex - 1] || MEMBER_CODES[0] || '';
+  const mySeatMode = (SEAT_MODES[userIndex - 1] || SEAT_MODES[0] || 'FRONT_LEFT') as any;
 
-  console.log(`${logPrefix} 🎫  เริ่มทำงานสำหรับ: ${sessionFile} (ID: ${myIdNumber}, จำนวน: ${myQuantity}, Member Code: ${myMemberCode})`);
+  console.log(`${logPrefix} 🎫  เริ่มทำงานสำหรับ: ${sessionFile} (ID: ${myIdNumber}, จำนวน: ${myQuantity}, โหมด: ${mySeatMode})`);
 
   const browser = await chromium.launch({
     headless: false,
@@ -168,7 +170,8 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
             seatsByRow, 
             quantity: myQuantity, 
             zone: zoneToTry, 
-            excludeSet: combinedExcludes 
+            excludeSet: combinedExcludes,
+            mode: mySeatMode
           });
 
           if (result.success) {

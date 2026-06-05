@@ -84,6 +84,7 @@ This project contains a Playwright-based structure to automate the login process
 - `TTM_PAYMENT_METHOD`: วิธีชำระเงิน (`qr` สำหรับ PromptPay, `credit` สำหรับบัตรเครดิต)
 - `TTM_ID`: รหัสบัตรประชาชน (หากมีหลาย user ให้ใส่ , เพื่อให้แยกบัตรประชาชนตามจำนวน user)
 - `TTM_MEMBER_CODE`: รหัสเมมเบอร์ (หากมีหลาย user ให้ใส่ , เพื่อให้แยก member code ตามจำนวน user)
+- `TTM_SEAT_MODE`: เลือกที่นั่งหลายรูปแบบ เพื่อให้เหมาะสมกับความต้องการและลดการแย่งที่นั่งกันเองเมื่อรันหลายจอพร้อมกัน [ตัวอย่างการใช้งาน](./SEAT_MODES.md)
 
 # Latest Update
 
