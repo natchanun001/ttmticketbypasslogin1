@@ -63,7 +63,7 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
         const url = req.url();
 
         if (
-          ['image', 'font', 'media'].includes(type) ||
+          ['font', 'media'].includes(type) ||
           /youtube\.com|youtu\.be|facebook\.com|fbcdn\.net/i.test(url)
         ) {
           return route.abort();
