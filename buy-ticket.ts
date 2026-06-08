@@ -74,23 +74,13 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
 
     const page = await context.newPage();
 
-    // --- Resource Blocking ---
-    if (process.env.BLOCK_RESOURCES === 'true') {
-      await page.route('**/*', (route) => {
-        const req = route.request();
-        const type = req.resourceType();
-        const url = req.url();
-
-        if (
-          ['image', 'font', 'media'].includes(type) ||
-          /youtube\.com|youtu\.be|facebook\.com|fbcdn\.net/i.test(url)
-        ) {
-          return route.abort();
-        }
-
-        return route.continue();
-      });
-    }
+    // Background popup handler (จัดการ "Yes, I'm here" และ Queue)
+    const popupHandler = (async () => {
+      while (!page.isClosed()) {
+        await handleQueueAndPopups(page, logPrefix);
+        await page.waitForTimeout(3000);
+      }
+    })();
 
     console.log(`${logPrefix} 🌐  กำลังไปที่ event page...`);
     await page.goto(EVENT_URL, { waitUntil: 'domcontentloaded' });
