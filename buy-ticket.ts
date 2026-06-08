@@ -27,6 +27,49 @@ const MEMBER_CODES = (process.env.TTM_MEMBER_CODE || '').split(',').map(code => 
 const SEAT_MODES = (process.env.TTM_SEAT_MODE || 'FRONT_LEFT').split(',').map(m => m.trim().toUpperCase());
 // ============================================
 
+async function checkAndPauseForCaptcha(page: any, logPrefix: string) {
+  const captchaSelectors = [
+    'iframe[src*="recaptcha"]',
+    '.g-recaptcha',
+    '#captcha-container',
+    '#challenge-container', // สำหรับ Queue-it
+    'div:has-text("กรุณายืนยันว่าคุณไม่ใช่โปรแกรมอัตโนมัติ")',
+    'div:has-text("Please verify you are a human")',
+    'body:has-text("Verify You Are Human")',
+    'h1:has-text("Verify You Are Human")',
+    'div:has-text("Verify You Are Human")'
+  ];
+
+  let captchaDetected = false;
+  for (const selector of captchaSelectors) {
+    if (await page.locator(selector).isVisible({ timeout: 500 }).catch(() => false)) {
+      captchaDetected = true;
+      break;
+    }
+  }
+
+  if (captchaDetected) {
+    console.log(`\n${logPrefix} ⚠️  [CAPTCHA DETECTED] ตรวจพบการตรวจสอบบอท!`);
+    console.log(`${logPrefix} 🛑  กรุณาไปที่หน้าจอเบราว์เซอร์เพื่อแก้ CAPTCHA ให้เรียบร้อย`);
+    console.log(`${logPrefix} ⏳  บอทจะหยุดรอจนกว่า CAPTCHA จะหายไป...`);
+
+    while (true) {
+      await page.waitForTimeout(3000);
+      let stillPresent = false;
+      for (const selector of captchaSelectors) {
+        if (await page.locator(selector).isVisible({ timeout: 500 }).catch(() => false)) {
+          stillPresent = true;
+          break;
+        }
+      }
+      if (!stillPresent) {
+        console.log(`${logPrefix} ✅  CAPTCHA หายไปแล้ว! บอทกำลังทำงานต่อ...`);
+        break;
+      }
+    }
+  }
+}
+
 async function handleQueueAndPopups(page: any, logPrefix: string) {
   const popups = [
     { selector: '#lbConfirm', name: "Yes, I'm here (Queue-it)" },
@@ -101,6 +144,10 @@ async function runBuyTicket(sessionFile: string, userIndex: number) {
 
     while (!seatFound) {
       globalRetryCount++;
+      
+      // ตรวจสอบ CAPTCHA ก่อนเริ่มรอบใหม่
+      await checkAndPauseForCaptcha(page, logPrefix);
+
       console.log(`${logPrefix} ⏳ รอบที่ ${globalRetryCount}: เริ่มต้นค้นหาที่นั่งตามลำดับ Priority...`);
 
       // 1. ตรวจสอบว่าอยู่หน้าไหน ถ้ายังไม่อยู่หน้าจอง ให้พยายามกดเข้า
